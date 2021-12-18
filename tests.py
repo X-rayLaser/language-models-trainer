@@ -1,6 +1,6 @@
 import unittest
 from random import shuffle
-from preprocessing import tokenize_prompt, paragraph_to_tokens, wrapped_tokens, build_vocab, one_hot_tensor
+from preprocessing import tokenize_prompt, paragraph_to_tokens, wrapped_tokens, build_vocab, one_hot_tensor, pad_sequences
 from preprocessing import Encoder, ExampleFactory
 import torch
 
@@ -167,6 +167,20 @@ class UtilityTests(unittest.TestCase):
             ], dtype=torch.float32
         )
         self.assertTrue(torch.allclose(expected, actual))
+
+    def test_pad_sequences(self):
+        seqs = [[0, 1], [2, 3, 4], [5]]
+        padded, mask = pad_sequences(seqs, filler=-1)
+        self.assertEqual([[0, 1, -1], [2, 3, 4], [5, -1, -1]], padded)
+
+        expected_mask = torch.tensor([[True, True, False], [True, True, True], [True, False, False]])
+        self.assertTrue(torch.allclose(expected_mask, mask))
+
+        seqs = [[1, 2, 3]]
+        padded, mask = pad_sequences(seqs, filler=-1)
+        self.assertEqual([[1, 2, 3]], padded)
+        expected_mask = torch.tensor([[True, True, True]])
+        self.assertTrue(torch.allclose(expected_mask, mask))
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@ from operator import add
 from collections import Counter
 
 import torch
+from torch.utils.data import Dataset
 
 
 def tokenize_prompt(prompt, allowed_punctuation='!?.,:;-+#$%'):
@@ -113,27 +114,54 @@ class Encoder:
                              f'Whitespace words: {with_spaces}')
 
 
+class ParagraphsDataset(Dataset):
+    def __init__(self, paragraphs, encoder):
+        self.paragraphs = paragraphs
+        self.encoder = encoder
+
+    def __getitem__(self, index):
+        paragraph = self.paragraphs[index]
+        #return paragraph, paragraph
+        return ExampleFactory(paragraph, self.encoder).make_example()
+
+    def __len__(self):
+        return len(self.paragraphs)
+
+
+def pad_sequence(seq, size, filler):
+    seq = list(seq)
+    while len(seq) < size:
+        seq.append(filler)
+    return seq
+
+
+def pad_sequences(seqs, filler):
+    lengths = [len(seq) for seq in seqs]
+    max_length = max(lengths)
+    mask = torch.zeros(len(seqs), max_length, dtype=torch.bool)
+
+    for i, length in enumerate(lengths):
+        mask[i, :length] = True
+
+    padded = [pad_sequence(seq, max_length, filler) for seq in seqs]
+    return padded, mask
+
+
 class Collator:
     def __init__(self, num_classes):
         self.num_classes = num_classes
 
-    def pad(self, seq, size, filler=None):
-        seq = list(seq)
-        while len(seq) < size:
-            seq.append(filler)
-        return seq
-
     def __call__(self, batch):
-        inputs, targets = batch
-        longest = max(inputs, key=len)
-        max_length = len(longest)
+        inputs = [x for x, y in batch]
+        targets = [y for x, y in batch]
 
         filler = targets[0][-1]
-        inputs = [self.pad(seq, max_length, filler) for seq in inputs]
-        targets = [self.pad(seq, max_length, filler) for seq in targets]
+        inputs, _ = pad_sequences(inputs, filler)
+        targets, mask = pad_sequences(targets, filler)
 
         num_classes = self.num_classes
-        return one_hot_tensor(inputs, num_classes), one_hot_tensor(targets, num_classes)
+
+        return one_hot_tensor(inputs, num_classes), one_hot_tensor(targets, num_classes), mask
 
 
 def one_hot_tensor(classes, num_classes):
@@ -145,13 +173,21 @@ def one_hot_tensor(classes, num_classes):
     :raise ValueError: if there is any class value that is negative or >= num_classes
     """
 
-    eye = torch.eye(num_classes, dtype=torch.float32)
+    # todo: clean this up (make this function into a callable class)
+
+    if not hasattr(one_hot_tensor, 'eye'):
+        one_hot_tensor.eye = {}
+
+    if num_classes not in one_hot_tensor.eye:
+        one_hot_tensor.eye[num_classes] = torch.eye(num_classes, dtype=torch.float32)
+    eye = one_hot_tensor.eye[num_classes]
     try:
         tensors = [eye[class_seq] for class_seq in classes]
     except IndexError:
         msg = f'Every class must be a non-negative numbers less than num_classes={num_classes}. ' \
               f'Got classes {classes}'
         raise ValueError(msg)
+
     return torch.stack(tensors)
 
 # todo: allow any kind of punctuation
