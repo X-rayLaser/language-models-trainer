@@ -39,6 +39,30 @@ wrapped_tokens.start_token = '<Start>'
 wrapped_tokens.end_token = '<End>'
 
 
+def lower_case_tokens(tokens):
+    return [t.lower() for t in tokens]
+
+
+def clean(tokens, allowed_punctuation='!?.,:;-+#$%'):
+    return [t for t in tokens if t.isalpha() or t in allowed_punctuation]
+
+
+def prepare_paragraph(para):
+    tokens = paragraph_to_tokens(para)
+    cleaned_tokens = clean(tokens)
+    return lower_case_tokens(wrapped_tokens(cleaned_tokens))
+
+
+def wrapped_paragraphs(paragraphs):
+    return [prepare_paragraph(para) for para in paragraphs]
+
+
+def flatten_paragraphs(paragraphs):
+    for para in paragraphs:
+        for token in prepare_paragraph(para):
+            yield token
+
+
 def build_vocab(tokens, max_size):
     if max_size <= 0:
         return []
@@ -121,14 +145,22 @@ class ParagraphsDataset(Dataset):
 
     def __getitem__(self, index):
         paragraph = self.paragraphs[index]
-        #return paragraph, paragraph
         return ExampleFactory(paragraph, self.encoder).make_example()
 
     def __len__(self):
         return len(self.paragraphs)
 
 
-def pad_sequence(seq, size, filler):
+class Mask:
+    def __init__(self, lengths, max_length):
+        self.mask = torch.zeros(len(lengths), max_length, dtype=torch.bool)
+        self.lengths = lengths
+
+        for i, length in enumerate(lengths):
+            self.mask[i, :length] = True
+
+
+def add_padding(seq, size, filler):
     seq = list(seq)
     while len(seq) < size:
         seq.append(filler)
@@ -138,12 +170,10 @@ def pad_sequence(seq, size, filler):
 def pad_sequences(seqs, filler):
     lengths = [len(seq) for seq in seqs]
     max_length = max(lengths)
-    mask = torch.zeros(len(seqs), max_length, dtype=torch.bool)
 
-    for i, length in enumerate(lengths):
-        mask[i, :length] = True
+    mask = Mask(lengths, max_length)
 
-    padded = [pad_sequence(seq, max_length, filler) for seq in seqs]
+    padded = [add_padding(seq, max_length, filler) for seq in seqs]
     return padded, mask
 
 
@@ -161,7 +191,7 @@ class Collator:
 
         num_classes = self.num_classes
 
-        return one_hot_tensor(inputs, num_classes), one_hot_tensor(targets, num_classes), mask
+        return one_hot_tensor(inputs, num_classes), torch.tensor(targets, dtype=torch.long), mask
 
 
 def one_hot_tensor(classes, num_classes):
@@ -184,17 +214,10 @@ def one_hot_tensor(classes, num_classes):
     try:
         tensors = [eye[class_seq] for class_seq in classes]
     except IndexError:
-        msg = f'Every class must be a non-negative numbers less than num_classes={num_classes}. ' \
+        msg = f'Every class must be a non-negative number less than num_classes={num_classes}. ' \
               f'Got classes {classes}'
         raise ValueError(msg)
 
     return torch.stack(tensors)
 
 # todo: allow any kind of punctuation
-
-
-"""
-    (Remove this later or use it)
-    Add special extra tokens <Start> and <End> to the
-    beginning and the end of list respectively.
-"""

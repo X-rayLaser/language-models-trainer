@@ -1,8 +1,11 @@
 import unittest
+import math
 from random import shuffle
 from preprocessing import tokenize_prompt, paragraph_to_tokens, wrapped_tokens, build_vocab, one_hot_tensor, pad_sequences
 from preprocessing import Encoder, ExampleFactory
+from utils import MovingAverage
 import torch
+from metrics import perplexity, batch_perplexity
 
 
 class TokenizingTests(unittest.TestCase):
@@ -174,13 +177,57 @@ class UtilityTests(unittest.TestCase):
         self.assertEqual([[0, 1, -1], [2, 3, 4], [5, -1, -1]], padded)
 
         expected_mask = torch.tensor([[True, True, False], [True, True, True], [True, False, False]])
-        self.assertTrue(torch.allclose(expected_mask, mask))
+        self.assertTrue(torch.allclose(expected_mask, mask.mask))
+        self.assertEqual([2, 3, 1], mask.lengths)
 
         seqs = [[1, 2, 3]]
         padded, mask = pad_sequences(seqs, filler=-1)
         self.assertEqual([[1, 2, 3]], padded)
         expected_mask = torch.tensor([[True, True, True]])
-        self.assertTrue(torch.allclose(expected_mask, mask))
+        self.assertTrue(torch.allclose(expected_mask, mask.mask))
+        self.assertEqual([3], mask.lengths)
+
+    def test_perplexity(self):
+        y_hat = torch.tensor([[0, 1, 0]])
+        ground_true = torch.tensor([1])
+        self.assertAlmostEqual(1, perplexity(y_hat, ground_true), places=7)
+
+        y_hat = torch.tensor([[0.7, 0.2, 0.1], [0.5, 0, 0.5]])
+        ground_true = torch.tensor([1, 0])
+        self.assertAlmostEqual(1. / math.sqrt(0.1), perplexity(y_hat, ground_true), places=7)
+
+        y_hat = torch.tensor([[0.7, 0.2, 0.1], [0.5, 0, 0.5], [0.25, 0.5, 0.25]])
+        ground_true = torch.tensor([1, 0, 2])
+        self.assertAlmostEqual(1. / (0.2 * 0.5 * 0.25) ** (1./3), perplexity(y_hat, ground_true), places=7)
+
+    def test_batch_perplexity(self):
+        y_hat1 = [[0, 1, 0], [1, 0, 0], [1, 0, 0]]
+        y_hat2 = [[0.7, 0.2, 0.1], [0.5, 0, 0.5], [1, 0, 0]]
+        y_hat3 = [[0.7, 0.2, 0.1], [0.5, 0, 0.5], [0.25, 0.5, 0.25]]
+
+        targets1 = [1, -1, -1]
+        targets2 = [1, 0, -1]
+        targets3 = [1, 0, 2]
+
+        y_hat = torch.tensor([y_hat1, y_hat2, y_hat3])
+        ground_true = torch.tensor([targets1, targets2, targets3])
+
+        pp1 = perplexity(torch.tensor(y_hat1)[:1], targets1[:1])
+        pp2 = perplexity(torch.tensor(y_hat2)[:2], targets2[:2])
+        pp3 = perplexity(torch.tensor(y_hat3), targets3)
+
+        expected = (pp1 + pp2 + pp3) / 3.
+        actual = batch_perplexity(y_hat, ground_true, [1, 2, 3])
+        self.assertAlmostEqual(expected, actual, places=8)
+
+
+class MovingAverageTest(unittest.TestCase):
+    def test_moving_average(self):
+        ma = MovingAverage(3)
+        self.assertEqual(1, ma(1))
+        self.assertEqual(2, ma(3))
+        self.assertEqual(3, ma(5))
+        self.assertEqual(4, ma(4))
 
 
 if __name__ == '__main__':
