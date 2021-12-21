@@ -35,7 +35,9 @@ class MaskedCrossEntropy:
         return t.transpose(1, 2)
 
 
-def run_training_loop(net, optimizer, criterion, train_loader, val_loader, epochs=1, print_interval=5):
+def run_training_loop(*, net, optimizer, train_loader, val_loader, on_epoch, epochs=1, print_interval=5):
+    criterion = MaskedCrossEntropy()
+
     for epoch in range(epochs):
         loss_ma = MovingAverage(print_interval)
         pp_ma = MovingAverage(print_interval)
@@ -70,8 +72,9 @@ def run_training_loop(net, optimizer, criterion, train_loader, val_loader, epoch
 
         train_pp = evaluate_perplexity(net, train_loader)
         val_pp = evaluate_perplexity(net, val_loader)
-        msg = '\rEpoch {:4}. Loss {:.5}. Val loss {:.5}. Perplexity {:.5}. Val perplexity {:.5}'
+        msg = '\rEpoch {:4}. Loss {:8.4f}. Val loss {:8.4f}. Perplexity {:8.4f}. Val perplexity {:8.4f}'
         print(msg.format(epoch, train_loss, val_loss, train_pp, val_pp))
+        on_epoch(epoch)
 
 
 def sample(net, encoder, prompt, steps):

@@ -178,8 +178,9 @@ def pad_sequences(seqs, filler):
 
 
 class Collator:
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, device):
         self.num_classes = num_classes
+        self.device = device
 
     def __call__(self, batch):
         inputs = [x for x, y in batch]
@@ -188,10 +189,13 @@ class Collator:
         filler = targets[0][-1]
         inputs, _ = pad_sequences(inputs, filler)
         targets, mask = pad_sequences(targets, filler)
+        mask.mask = mask.mask.to(self.device)
 
         num_classes = self.num_classes
 
-        return one_hot_tensor(inputs, num_classes), torch.tensor(targets, dtype=torch.long), mask
+        return (one_hot_tensor(inputs, num_classes).to(self.device),
+                torch.tensor(targets, dtype=torch.long).to(self.device),
+                mask)
 
 
 def one_hot_tensor(classes, num_classes):
