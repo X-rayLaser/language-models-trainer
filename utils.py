@@ -35,7 +35,9 @@ class MaskedCrossEntropy:
         return t.transpose(1, 2)
 
 
-def run_training_loop(*, net, optimizer, train_loader, val_loader, on_epoch, epochs=1, print_interval=5):
+def run_training_loop(*,
+                      net, optimizer, train_loader, val_loader,
+                      on_epoch, epochs=1, print_interval=5, iterations_per_metric=10):
     criterion = MaskedCrossEntropy()
 
     for epoch in range(epochs):
@@ -67,11 +69,11 @@ def run_training_loop(*, net, optimizer, train_loader, val_loader, on_epoch, epo
                     )
                     print(msg, end='')
 
-        train_loss = evaluate_loss(net, train_loader)
-        val_loss = evaluate_loss(net, val_loader)
+        train_loss = evaluate_loss(net, train_loader, iterations_per_metric)
+        val_loss = evaluate_loss(net, val_loader, iterations_per_metric)
 
-        train_pp = evaluate_perplexity(net, train_loader)
-        val_pp = evaluate_perplexity(net, val_loader)
+        train_pp = evaluate_perplexity(net, train_loader, iterations_per_metric)
+        val_pp = evaluate_perplexity(net, val_loader, iterations_per_metric)
         msg = '\rEpoch {:4}. Loss {:8.4f}. Val loss {:8.4f}. Perplexity {:8.4f}. Val perplexity {:8.4f}'
         print(msg.format(epoch, train_loss, val_loss, train_pp, val_pp))
         on_epoch(epoch)
@@ -109,30 +111,34 @@ def sample(net, encoder, prompt, steps):
     return tokens[1:] + encoder.decode_many(output_classes)
 
 
-def evaluate_loss(net, data_loader):
+def evaluate_loss(net, data_loader, num_iterations=None):
     loss = MaskedCrossEntropy()
 
     def evaluate_fn(outputs, targets, mask):
         return loss(outputs, targets, mask.mask)
 
-    return evaluate_metric(net, data_loader, evaluate_fn)
+    return evaluate_metric(net, data_loader, evaluate_fn, num_iterations)
 
 
-def evaluate_perplexity(net, data_loader):
+def evaluate_perplexity(net, data_loader, num_iterations=None):
     def evaluate_fn(outputs, targets, mask):
         y_hat = F.softmax(outputs, dim=2)
         return batch_perplexity(y_hat, targets, mask.lengths)
 
-    return evaluate_metric(net, data_loader, evaluate_fn)
+    return evaluate_metric(net, data_loader, evaluate_fn, num_iterations)
 
 
-def evaluate_metric(net, data_loader, evaluate_fn):
+def evaluate_metric(net, data_loader, evaluate_fn, num_iterations=None):
     num_batches = len(data_loader)
+    num_iterations = num_iterations or num_batches
 
     ma = MovingAverage(num_batches)
     mean_score = 0
     with torch.no_grad():
         for i, batch in enumerate(data_loader):
+            if i >= num_iterations:
+                break
+
             inputs, targets, mask = batch
             outputs, _ = net(inputs)
             score = evaluate_fn(outputs, targets, mask)

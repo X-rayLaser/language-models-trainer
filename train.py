@@ -50,6 +50,9 @@ def train(*,  # function accepts keyword only arguments
     val_dataset = ParagraphsDataset(wrapped_paragraphs(test_paragraphs), encoder)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate)
 
+    print(f'# of training batches {len(train_dataloader)}, '
+          f'# of validation batches {len(val_dataloader)}')
+
     net_params = dict(num_classes=len(encoder), hidden_dim=128)
     net = Net(**net_params)
     net.to(device)
