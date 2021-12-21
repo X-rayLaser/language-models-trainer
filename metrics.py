@@ -1,17 +1,10 @@
 import torch
-from torch.nn import functional as F
-from functools import reduce
-from operator import mul
 
 
 def batch_perplexity(y_hat, ground_true, lengths):
     triples = zip(y_hat, ground_true, lengths)
     pps = [perplexity(y[:size], classes[:size]) for y, classes, size in triples]
     return sum(pps) / len(pps)
-
-
-def nth_root(x, n):
-    return x ** (1. / n)
 
 
 def perplexity(y_hat, ground_true):

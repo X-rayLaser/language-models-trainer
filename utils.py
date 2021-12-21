@@ -4,6 +4,8 @@ from collections import deque
 from metrics import batch_perplexity
 from torch.nn import functional as F
 
+from preprocessing import tokenize_prompt, wrapped_tokens, one_hot_tensor
+
 
 class MovingAverage:
     def __init__(self, nun_points):
@@ -29,15 +31,12 @@ class MaskedCrossEntropy:
         return t.transpose(1, 2)
 
 
-def run_training_loop(net, optimizer, criterion, dataloader, encoder, epochs=1):
-    ma_period = 50
+def run_training_loop(net, optimizer, criterion, train_loader, val_loader, epochs=1, print_interval=5):
     for epoch in range(epochs):
-        mean_loss = 0
-        mean_pp = 0
-        loss_ma = MovingAverage(ma_period)
-        pp_ma = MovingAverage(ma_period)
+        loss_ma = MovingAverage(print_interval)
+        pp_ma = MovingAverage(print_interval)
 
-        for i, batch in enumerate(dataloader):
+        for i, batch in enumerate(train_loader):
             inputs, labels, mask = batch
             # zero the parameter gradients
             optimizer.zero_grad()
@@ -56,23 +55,22 @@ def run_training_loop(net, optimizer, criterion, dataloader, encoder, epochs=1):
 
                 mean_pp = pp_ma(pp)
 
-                if i % 25 == 0:
+                if i % print_interval == 0:
                     msg = '\rEpoch {:4}. Iteration {:6}. Loss {:.5}. Perplexity {:.5}'.format(
                         epoch, i, mean_loss, mean_pp
                     )
                     print(msg, end='')
-                    s_from = ' '.join(encoder.decode_many(labels[0]))
-                    s_to = ' '.join(encoder.decode_many(outputs[0].argmax(dim=1)))
 
-                    print('\n', s_from, '->')
-                    print('', s_to)
+        train_loss = evaluate_loss(net, train_loader)
+        val_loss = evaluate_loss(net, val_loader)
 
-        msg = '\rEpoch {:4}. Loss {:.5}. Perplexity {:.5}'.format(epoch, mean_loss, mean_pp)
-        print(msg)
+        train_pp = evaluate_perplexity(net, train_loader)
+        val_pp = evaluate_perplexity(net, val_loader)
+        msg = '\rEpoch {:4}. Loss {:.5}. Val loss {:.5}. Perplexity {:.5}. Val perplexity {:.5}'
+        print(msg.format(epoch, train_loss, val_loss, train_pp, val_pp))
 
 
 def sample(net, encoder, prompt, steps):
-    from preprocessing import tokenize_prompt, wrapped_tokens, one_hot_tensor
     if prompt.strip():
         tokens = wrapped_tokens(tokenize_prompt(prompt))[:-1]
     else:
@@ -98,3 +96,35 @@ def sample(net, encoder, prompt, steps):
         output_classes.append(next_class[0])
 
     return tokens + encoder.decode_many(output_classes)
+
+
+def evaluate_loss(net, data_loader):
+    loss = MaskedCrossEntropy()
+
+    def evaluate_fn(outputs, targets, mask):
+        return loss(outputs, targets, mask.mask)
+
+    return evaluate_metric(net, data_loader, evaluate_fn)
+
+
+def evaluate_perplexity(net, data_loader):
+    def evaluate_fn(outputs, targets, mask):
+        y_hat = F.softmax(outputs, dim=2)
+        return batch_perplexity(y_hat, targets, mask.lengths)
+
+    return evaluate_metric(net, data_loader, evaluate_fn)
+
+
+def evaluate_metric(net, data_loader, evaluate_fn):
+    num_batches = len(data_loader)
+
+    ma = MovingAverage(num_batches)
+    mean_score = 0
+    with torch.no_grad():
+        for i, batch in enumerate(data_loader):
+            inputs, targets, mask = batch
+            outputs, _ = net(inputs)
+            score = evaluate_fn(outputs, targets, mask)
+            mean_score = ma(score)
+
+    return mean_score

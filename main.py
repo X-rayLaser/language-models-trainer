@@ -13,6 +13,7 @@ import torch.optim as optim
 from preprocessing import Encoder, ParagraphsDataset, build_vocab, Collator, flatten_paragraphs, wrapped_paragraphs
 from utils import MaskedCrossEntropy, run_training_loop
 from model import Net
+from utils import sample
 
 
 def get_paragraphs_for(category=None):
@@ -24,7 +25,7 @@ batch_size = 20
 genre = 'fiction'
 max_vocab_size = 20000
 
-all_paragraphs = get_paragraphs_for(genre)[:40]
+all_paragraphs = get_paragraphs_for(genre)[:100]
 train_size = int(len(all_paragraphs) * train_fraction)
 train_paragraphs = all_paragraphs[:train_size]
 test_paragraphs = all_paragraphs[train_size:]
@@ -36,20 +37,18 @@ encoder = Encoder.build(vocab)
 print(len(encoder))
 collate = Collator(len(encoder))
 train_dataset = ParagraphsDataset(wrapped_paragraphs(train_paragraphs), encoder)
-train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True, collate_fn=collate)
+train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=collate)
 
-test_dataset = ParagraphsDataset(wrapped_paragraphs(test_paragraphs), encoder)
-test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate)
+val_dataset = ParagraphsDataset(wrapped_paragraphs(test_paragraphs), encoder)
+val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate)
 
 net = Net(num_classes=len(encoder), hidden_dim=128)
 
 criterion = MaskedCrossEntropy()
 optimizer = optim.RMSprop(net.parameters(), lr=0.001)
 
-run_training_loop(net, optimizer, criterion, train_dataloader, encoder, epochs=100)
+run_training_loop(net, optimizer, criterion, train_dataloader, val_dataloader, epochs=100)
 
-
-from utils import sample
 for i in range(100):
     prompt = input('Enter a text')
     print(sample(net, encoder, prompt, steps=10))
