@@ -13,7 +13,7 @@ import torch.optim as optim
 from preprocessing import Encoder, ParagraphsDataset, build_vocab, Collator, flatten_paragraphs, wrapped_paragraphs
 from utils import MaskedCrossEntropy, run_training_loop
 from model import Net
-from utils import sample
+from utils import sample, ModelStorage
 
 
 def get_paragraphs_for(category=None):
@@ -42,12 +42,16 @@ train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate
 val_dataset = ParagraphsDataset(wrapped_paragraphs(test_paragraphs), encoder)
 val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate)
 
-net = Net(num_classes=len(encoder), hidden_dim=128)
+net_params = dict(num_classes=len(encoder), hidden_dim=128)
+net = Net(**net_params)
 
 criterion = MaskedCrossEntropy()
 optimizer = optim.RMSprop(net.parameters(), lr=0.001)
 
-run_training_loop(net, optimizer, criterion, train_dataloader, val_dataloader, epochs=100)
+run_training_loop(net, optimizer, criterion, train_dataloader, val_dataloader, epochs=1)
+
+ModelStorage.save(net, net_params, encoder, 'checkpoint1')
+net, encoder = ModelStorage.load('checkpoint1')
 
 for i in range(100):
     prompt = input('Enter a text')

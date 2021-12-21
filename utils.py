@@ -1,10 +1,14 @@
+import os
+import json
+from collections import deque
+
 import torch
 from torch import nn
-from collections import deque
-from metrics import batch_perplexity
 from torch.nn import functional as F
 
-from preprocessing import tokenize_prompt, wrapped_tokens, one_hot_tensor
+from metrics import batch_perplexity
+from preprocessing import tokenize_prompt, wrapped_tokens, one_hot_tensor, Encoder
+from model import Net
 
 
 class MovingAverage:
@@ -128,3 +132,67 @@ def evaluate_metric(net, data_loader, evaluate_fn):
             mean_score = ma(score)
 
     return mean_score
+
+
+class ModelStorage:
+    model_name = 'model.pt'
+    encoding_table_name = 'encoding_table'
+    model_params_name = 'model_params'
+
+    @classmethod
+    def save(cls, model, model_params, encoder, dir_path):
+        os.makedirs(dir_path, exist_ok=True)
+
+        params_json = json.dumps(model_params)
+        with open(cls.model_params_path(dir_path), 'w', encoding='utf-8') as f:
+            f.write(params_json)
+
+        torch.save(model.state_dict(), cls.model_path(dir_path))
+        encoding_table = encoder.serialize()
+
+        with open(cls.encoding_table_path(dir_path), 'w', encoding='utf-8') as f:
+            f.write(encoding_table)
+
+    @classmethod
+    def model_path(cls, dir_path):
+        return os.path.join(dir_path, cls.model_name)
+
+    @classmethod
+    def encoding_table_path(cls, dir_path):
+        return os.path.join(dir_path, cls.encoding_table_name)
+
+    @classmethod
+    def model_params_path(cls, dir_path):
+        return os.path.join(dir_path, cls.model_params_name)
+
+    @classmethod
+    def load(cls, dir_path):
+        if not os.path.isdir(dir_path):
+            raise Exception(f'{dir_path} should be a directory')
+
+        model_path = cls.model_path(dir_path)
+        params_path = cls.model_params_path(dir_path)
+        encoding_table_path = cls.encoding_table_path(dir_path)
+
+        cls.validate_file(model_path)
+        cls.validate_file(params_path)
+        cls.validate_file(encoding_table_path)
+
+        with open(params_path, 'r', encoding='utf-8') as f:
+            params_json = f.read()
+
+        model_params = json.loads(params_json)
+        model = Net(**model_params)
+        model.load_state_dict(torch.load(model_path))
+        model.eval()
+
+        with open(encoding_table_path, 'r', encoding='utf-8') as f:
+            encoding_table = f.read()
+
+        encoder = Encoder.deserialize(encoding_table)
+        return model, encoder
+
+    @classmethod
+    def _validate_file(cls, path):
+        if not os.path.isfile(path):
+            raise Exception(f'File "{path}" does not exist')
