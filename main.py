@@ -6,14 +6,12 @@
 # all previous step calculations are considered
 # some users suggest to use detach on outputs h of LSTM layer
 import nltk
-from torch import nn
 from torch.utils.data import DataLoader
 import torch.optim as optim
 
 from preprocessing import Encoder, ParagraphsDataset, build_vocab, Collator, flatten_paragraphs, wrapped_paragraphs
-from utils import MaskedCrossEntropy, run_training_loop
+from utils import MaskedCrossEntropy, run_training_loop, ModelStorage
 from model import Net
-from utils import sample, ModelStorage
 
 
 def get_paragraphs_for(category=None):
@@ -50,12 +48,7 @@ optimizer = optim.RMSprop(net.parameters(), lr=0.001)
 
 run_training_loop(net, optimizer, criterion, train_dataloader, val_dataloader, epochs=1)
 
-ModelStorage.save(net, net_params, encoder, 'checkpoint1')
-net, encoder = ModelStorage.load('checkpoint1')
-
-for i in range(100):
-    prompt = input('Enter a text')
-    print(sample(net, encoder, prompt, steps=10))
+ModelStorage.save(net, net_params, encoder, 'checkpoints/checkpoint1')
 
 # todo: refactor
 # todo: clean nltk paragraphs

@@ -35,8 +35,8 @@ def wrapped_tokens(tokens):
     return [wrapped_tokens.start_token] + tokens + [wrapped_tokens.end_token]
 
 
-wrapped_tokens.start_token = '<Start>'
-wrapped_tokens.end_token = '<End>'
+wrapped_tokens.start_token = '<start>'
+wrapped_tokens.end_token = '<end>'
 
 
 def lower_case_tokens(tokens):

@@ -88,18 +88,22 @@ def sample(net, encoder, prompt, steps):
     next_class = classes
     x = one_hot_tensor([next_class], num_classes)
     outputs, state = net(x, state)
-    pmf = F.softmax(outputs[0, -1])
+    pmf = F.softmax(outputs[0, -1], dim=-1)
     next_class = torch.multinomial(pmf, 1)
     output_classes.append(next_class[0])
 
     for t in range(steps):
         x = one_hot_tensor([next_class], num_classes)
         outputs, state = net(x, state)
-        pmf = F.softmax(outputs[0, -1])
+        pmf = F.softmax(outputs[0, -1], dim=-1)
         next_class = torch.multinomial(pmf, 1)
+
+        if encoder.decode(next_class[0]) == wrapped_tokens.end_token:
+            break
+
         output_classes.append(next_class[0])
 
-    return tokens + encoder.decode_many(output_classes)
+    return tokens[1:] + encoder.decode_many(output_classes)
 
 
 def evaluate_loss(net, data_loader):
@@ -174,9 +178,9 @@ class ModelStorage:
         params_path = cls.model_params_path(dir_path)
         encoding_table_path = cls.encoding_table_path(dir_path)
 
-        cls.validate_file(model_path)
-        cls.validate_file(params_path)
-        cls.validate_file(encoding_table_path)
+        cls._validate_file(model_path)
+        cls._validate_file(params_path)
+        cls._validate_file(encoding_table_path)
 
         with open(params_path, 'r', encoding='utf-8') as f:
             params_json = f.read()
