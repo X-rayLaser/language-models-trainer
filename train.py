@@ -50,7 +50,10 @@ def train(*,  # function accepts keyword only arguments
     val_dataset = ParagraphsDataset(wrapped_paragraphs(test_paragraphs), encoder)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate)
 
-    print(f'# of training batches {len(train_dataloader)}, '
+    num_training_batches = len(train_dataloader)
+    iterations_per_metric = max(1, num_training_batches // 10)
+
+    print(f'# of training batches {num_training_batches}, '
           f'# of validation batches {len(val_dataloader)}')
 
     net_params = dict(num_classes=len(encoder), hidden_dim=128)
@@ -64,7 +67,8 @@ def train(*,  # function accepts keyword only arguments
         ModelStorage.save(net, net_params, encoder, path)
 
     run_training_loop(net=net, optimizer=optimizer, train_loader=train_dataloader,
-                      val_loader=val_dataloader, on_epoch=save_callback, epochs=epochs)
+                      val_loader=val_dataloader, on_epoch=save_callback,
+                      epochs=epochs, iterations_per_metric=iterations_per_metric)
 
 
 if __name__ == '__main__':
