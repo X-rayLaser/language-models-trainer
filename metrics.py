@@ -1,3 +1,4 @@
+import torch
 from torch.nn import functional as F
 from functools import reduce
 from operator import mul
@@ -23,9 +24,5 @@ def perplexity(y_hat, ground_true):
     row_indices = list(range(len(ground_true)))
     col_indices = ground_true
     probabilities = y_hat[row_indices, col_indices]
-    likelihood = reduce(mul, probabilities, 1).item()
-
     n = len(ground_true)
-
-    eps = 10**(-10)
-    return 1. / (nth_root(likelihood, n) + eps)
+    return torch.exp(-torch.log(probabilities).sum() / n).item()

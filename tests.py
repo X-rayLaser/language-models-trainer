@@ -198,7 +198,11 @@ class UtilityTests(unittest.TestCase):
 
         y_hat = torch.tensor([[0.7, 0.2, 0.1], [0.5, 0, 0.5], [0.25, 0.5, 0.25]])
         ground_true = torch.tensor([1, 0, 2])
-        self.assertAlmostEqual(1. / (0.2 * 0.5 * 0.25) ** (1./3), perplexity(y_hat, ground_true), places=7)
+        self.assertAlmostEqual(1. / (0.2 * 0.5 * 0.25) ** (1./3), perplexity(y_hat, ground_true), places=6)
+
+        y_hat = torch.tensor([[0.7, 0.3, 0]])
+        ground_true = torch.tensor([2])
+        self.assertEqual(torch.inf, perplexity(y_hat, ground_true))
 
     def test_batch_perplexity(self):
         y_hat1 = [[0, 1, 0], [1, 0, 0], [1, 0, 0]]
