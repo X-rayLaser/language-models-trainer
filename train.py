@@ -24,8 +24,10 @@ def get_paragraphs_for(category=None):
 
 
 def train(*,  # function accepts keyword only arguments
-          size=None, train_fraction=0.9, batch_size=8,
-          genre='fiction', vocab_size=20000, save_dir='checkpoints', epochs=100):
+          size=None, lstm_cells=32,
+          train_fraction=0.9, batch_size=8,
+          genre='fiction', vocab_size=20000, save_dir='checkpoints',
+          epochs=100):
     all_paragraphs = get_paragraphs_for(genre)
     if size:
         all_paragraphs = all_paragraphs[:size]
@@ -56,7 +58,7 @@ def train(*,  # function accepts keyword only arguments
     print(f'# of training batches {num_training_batches}, '
           f'# of validation batches {len(val_dataloader)}')
 
-    net_params = dict(num_classes=len(encoder), hidden_dim=128)
+    net_params = dict(num_classes=len(encoder), hidden_dim=lstm_cells)
     net = Net(**net_params)
     net.to(device)
 
@@ -75,6 +77,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a language model on a given literature genre')
     parser.add_argument('--save_dir', type=str, default='checkpoints',
                         help='Path to a location where a model will be saved to')
+    parser.add_argument('--capacity', type=int, default=32, help='Model capacity (size of the LSTM layer)')
+
     parser.add_argument('--genre', type=str, default='fiction',
                         help='Literature genre used to train a language model')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
@@ -84,5 +88,5 @@ if __name__ == '__main__':
     parser.add_argument('--prompt', type=str, default='', help='Text used to condition a model on')
     args = parser.parse_args()
 
-    train(batch_size=args.batch_size, genre=args.genre, vocab_size=args.vocab_size,
-          save_dir=args.save_dir, epochs=args.epochs)
+    train(lstm_cells=args.capacity, batch_size=args.batch_size, genre=args.genre,
+          vocab_size=args.vocab_size, save_dir=args.save_dir, epochs=args.epochs)
