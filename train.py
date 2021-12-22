@@ -13,31 +13,40 @@ import torch
 from torch.utils.data import DataLoader
 import torch.optim as optim
 
-from preprocessing import Encoder, ParagraphsDataset, build_vocab, Collator, flatten_paragraphs, wrapped_paragraphs
+from preprocessing import Encoder, FragmentsDataset, build_vocab, Collator, Paragraph, Sentence
 from utils import run_training_loop, ModelStorage
 from model import Net
 
 
 def get_paragraphs_for(category=None):
     nltk.download('brown')
-    return nltk.corpus.brown.paras(categories=category)
+    return [Paragraph(para) for para in nltk.corpus.brown.paras(categories=category)]
+
+
+def get_sentences_for(category=None):
+    nltk.download('brown')
+    return [Sentence(sent) for sent in nltk.corpus.brown.sents(categories=category)]
 
 
 def train(*,  # function accepts keyword only arguments
+          get_examples,
           size=None, lstm_cells=32,
           train_fraction=0.9, batch_size=8,
           genre='fiction', vocab_size=20000, save_dir='checkpoints',
           epochs=100):
-    all_paragraphs = get_paragraphs_for(genre)
-    if size:
-        all_paragraphs = all_paragraphs[:size]
 
-    train_size = int(len(all_paragraphs) * train_fraction)
-    train_paragraphs = all_paragraphs[:train_size]
-    test_paragraphs = all_paragraphs[train_size:]
+    print(f'Fetching examples using function {get_examples.__name__}')
+
+    all_fragments = get_examples(genre)
+    if size:
+        all_fragments = all_fragments[:size]
+
+    train_size = int(len(all_fragments) * train_fraction)
+    train_fragments = all_fragments[:train_size]
+    test_fragments = all_fragments[train_size:]
     print(f'Training examples {train_size}')
 
-    vocab = build_vocab(flatten_paragraphs(train_paragraphs), max_size=vocab_size)
+    vocab = build_vocab(Paragraph.flatten_fragments(train_fragments), max_size=vocab_size)
 
     encoder = Encoder.build(vocab)
     print('Unique tokens total:', len(encoder))
@@ -46,10 +55,10 @@ def train(*,  # function accepts keyword only arguments
     print('Running on device', device)
 
     collate = Collator(num_classes=len(encoder), device=device)
-    train_dataset = ParagraphsDataset(wrapped_paragraphs(train_paragraphs), encoder)
+    train_dataset = FragmentsDataset(Paragraph.prepare_fragments(train_fragments), encoder)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate)
 
-    val_dataset = ParagraphsDataset(wrapped_paragraphs(test_paragraphs), encoder)
+    val_dataset = FragmentsDataset(Paragraph.prepare_fragments(test_fragments), encoder)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate)
 
     num_training_batches = len(train_dataloader)
@@ -75,6 +84,10 @@ def train(*,  # function accepts keyword only arguments
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a language model on a given literature genre')
+
+    parser.add_argument('--paras', type=bool, default=False,
+                        help='When set, paragraphs will be used for training. Sentences are used by default')
+    parser.add_argument('--size', type=int, default=None, help='Total number of examples in train/validation split')
     parser.add_argument('--save_dir', type=str, default='checkpoints',
                         help='Path to a location where a model will be saved to')
     parser.add_argument('--capacity', type=int, default=32, help='Model capacity (size of the LSTM layer)')
@@ -88,5 +101,12 @@ if __name__ == '__main__':
     parser.add_argument('--prompt', type=str, default='', help='Text used to condition a model on')
     args = parser.parse_args()
 
-    train(lstm_cells=args.capacity, batch_size=args.batch_size, genre=args.genre,
+    train(get_examples=get_paragraphs_for if args.paras else get_sentences_for,
+          size=args.size, lstm_cells=args.capacity,
+          batch_size=args.batch_size, genre=args.genre,
           vocab_size=args.vocab_size, save_dir=args.save_dir, epochs=args.epochs)
+
+
+# todo: refactor
+# todo: different implementation of dataset (the one that can handle huge corpora)
+# todo: get more data

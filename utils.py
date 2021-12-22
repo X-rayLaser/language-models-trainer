@@ -196,7 +196,7 @@ class ModelStorage:
 
         model_params = json.loads(params_json)
         model = Net(**model_params)
-        model.load_state_dict(torch.load(model_path))
+        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
         model.eval()
 
         with open(encoding_table_path, 'r', encoding='utf-8') as f:

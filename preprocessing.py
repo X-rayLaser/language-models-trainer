@@ -39,28 +39,44 @@ wrapped_tokens.start_token = '<start>'
 wrapped_tokens.end_token = '<end>'
 
 
-def lower_case_tokens(tokens):
-    return [t.lower() for t in tokens]
+class TextFragment:
+    @classmethod
+    def flatten_fragments(cls, fragments):
+        for fragment in fragments:
+            for token in fragment.prepare_tokens():
+                yield token
+
+    @classmethod
+    def prepare_fragments(cls, fragments):
+        return [fragment.prepare_tokens() for fragment in fragments]
+
+    def prepare_tokens(self):
+        raise NotImplementedError
+
+    def to_lower_case(self, tokens):
+        return [t.lower() for t in tokens]
+
+    def clean(self, tokens, allowed_punctuation='!?.,:;-+#$%'):
+        return [t for t in tokens if t.isalpha() or t in allowed_punctuation]
 
 
-def clean(tokens, allowed_punctuation='!?.,:;-+#$%'):
-    return [t for t in tokens if t.isalpha() or t in allowed_punctuation]
+class Paragraph(TextFragment):
+    def __init__(self, sentences):
+        self.sentences = sentences
+
+    def prepare_tokens(self):
+        tokens = paragraph_to_tokens(self.sentences)
+        cleaned_tokens = self.clean(tokens)
+        return self.to_lower_case(wrapped_tokens(cleaned_tokens))
 
 
-def prepare_paragraph(para):
-    tokens = paragraph_to_tokens(para)
-    cleaned_tokens = clean(tokens)
-    return lower_case_tokens(wrapped_tokens(cleaned_tokens))
+class Sentence(TextFragment):
+    def __init__(self, tokens):
+        self.tokens = tokens
 
-
-def wrapped_paragraphs(paragraphs):
-    return [prepare_paragraph(para) for para in paragraphs]
-
-
-def flatten_paragraphs(paragraphs):
-    for para in paragraphs:
-        for token in prepare_paragraph(para):
-            yield token
+    def prepare_tokens(self):
+        cleaned_tokens = self.clean(self.tokens)
+        return self.to_lower_case(wrapped_tokens(cleaned_tokens))
 
 
 def build_vocab(tokens, max_size):
@@ -138,17 +154,17 @@ class Encoder:
                              f'Whitespace words: {with_spaces}')
 
 
-class ParagraphsDataset(Dataset):
-    def __init__(self, paragraphs, encoder):
-        self.paragraphs = paragraphs
+class FragmentsDataset(Dataset):
+    def __init__(self, fragments, encoder):
+        self.fragments = fragments
         self.encoder = encoder
 
     def __getitem__(self, index):
-        paragraph = self.paragraphs[index]
-        return ExampleFactory(paragraph, self.encoder).make_example()
+        fragment = self.fragments[index]
+        return ExampleFactory(fragment, self.encoder).make_example()
 
     def __len__(self):
-        return len(self.paragraphs)
+        return len(self.fragments)
 
 
 class Mask:
