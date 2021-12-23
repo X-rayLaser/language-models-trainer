@@ -16,6 +16,7 @@ import torch.optim as optim
 from preprocessing import Encoder, FragmentsDataset, build_vocab, Collator, Paragraph, Sentence
 from utils import run_training_loop, ModelStorage
 from model import Net
+from datasets import NltkDataset, Wiki2
 
 
 def get_paragraphs_for(category=None):
@@ -29,22 +30,18 @@ def get_sentences_for(category=None):
 
 
 def train(*,  # function accepts keyword only arguments
-          get_examples,
-          size=None, lstm_cells=32,
-          train_fraction=0.9, batch_size=8,
-          genre='fiction', vocab_size=20000, save_dir='checkpoints',
+          dataset,
+          lstm_cells=32,
+          batch_size=8,
+          vocab_size=20000, save_dir='checkpoints',
           epochs=100):
 
-    print(f'Fetching examples using function {get_examples.__name__}')
+    print(f'Fetching examples using {dataset.__class__.__name__}')
 
-    all_fragments = get_examples(genre)
-    if size:
-        all_fragments = all_fragments[:size]
+    train_fragments = dataset.get_training_fragments()
+    test_fragments = dataset.get_validation_fragments() + dataset.get_test_fragments()
 
-    train_size = int(len(all_fragments) * train_fraction)
-    train_fragments = all_fragments[:train_size]
-    test_fragments = all_fragments[train_size:]
-    print(f'Training examples {train_size}')
+    print(f'Training examples {len(train_fragments)}')
 
     vocab = build_vocab(Paragraph.flatten_fragments(train_fragments), max_size=vocab_size)
 
@@ -101,12 +98,18 @@ if __name__ == '__main__':
     parser.add_argument('--prompt', type=str, default='', help='Text used to condition a model on')
     args = parser.parse_args()
 
-    train(get_examples=get_paragraphs_for if args.paras else get_sentences_for,
-          size=args.size, lstm_cells=args.capacity,
-          batch_size=args.batch_size, genre=args.genre,
+    if args.genre == 'wiki2':
+        ds = Wiki2('datasets/wikitext-2', size=args.size, as_paragraphs=args.paras)
+    else:
+        ds = NltkDataset(corpus_name='brown', size=args.size,
+                         categories=args.genre, as_paragraphs=args.paras)
+
+    train(dataset=ds,
+          lstm_cells=args.capacity,
+          batch_size=args.batch_size,
           vocab_size=args.vocab_size, save_dir=args.save_dir, epochs=args.epochs)
 
 
-# todo: refactor
+# todo: fine-tune GPT-2 or T5
 # todo: different implementation of dataset (the one that can handle huge corpora)
 # todo: get more data

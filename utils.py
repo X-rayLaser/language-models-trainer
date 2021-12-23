@@ -46,6 +46,7 @@ def run_training_loop(*,
 
         for i, batch in enumerate(train_loader):
             inputs, labels, mask = batch
+
             # zero the parameter gradients
             optimizer.zero_grad()
 
