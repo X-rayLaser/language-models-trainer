@@ -110,6 +110,8 @@ if __name__ == '__main__':
           vocab_size=args.vocab_size, save_dir=args.save_dir, epochs=args.epochs)
 
 
+# todo: add Penn Tree Bank dataset class
+# todo: script for evaluating perplexity on a corpus
 # todo: fine-tune GPT-2 or T5
 # todo: different implementation of dataset (the one that can handle huge corpora)
 # todo: get more data
