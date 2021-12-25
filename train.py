@@ -89,7 +89,7 @@ if __name__ == '__main__':
                         help='Path to a location where a model will be saved to')
     parser.add_argument('--capacity', type=int, default=32, help='Model capacity (size of the LSTM layer)')
 
-    parser.add_argument('--genre', type=str, default='fiction',
+    parser.add_argument('--genre', type=str, default='',
                         help='Literature genre used to train a language model')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
     parser.add_argument('--vocab_size', type=int, default=20000,
@@ -98,11 +98,12 @@ if __name__ == '__main__':
     parser.add_argument('--prompt', type=str, default='', help='Text used to condition a model on')
     args = parser.parse_args()
 
-    if args.genre == 'wiki2':
+    genre = args.genre or None
+    if genre == 'wiki2':
         ds = Wiki2('datasets/wikitext-2', size=args.size, as_paragraphs=args.paras)
     else:
         ds = NltkDataset(corpus_name='brown', size=args.size,
-                         categories=args.genre, as_paragraphs=args.paras)
+                         categories=genre, as_paragraphs=args.paras)
 
     train(dataset=ds,
           lstm_cells=args.capacity,
