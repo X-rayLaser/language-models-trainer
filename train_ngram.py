@@ -83,14 +83,25 @@ class NGramModel:
         return np.random.choice(num_classes, p=pmf)
 
 
-def back_off(counts):
+def reduce_order(counts, output_table):
     # todo: fix this and use this as a main routine to compute n-1 grams to speed up build_ensemble_counts function
-    n_1_table = {}
+    n_1_table = output_table
+    counts_row = next(iter(counts.values()))
+    num_classes = counts_row.shape[0]
+
+    max_cache_size = 1000
+    in_memory_table = defaultdict(lambda: np.zeros(num_classes, dtype=np.int32))
+
     for key in counts:
-        tail = key[1:]
-        if tail not in n_1_table:
-            n_1_table[tail] = [0] * 10000
-        n_1_table[tail] += counts[key]
+        n_1_gram = key.split('_')
+
+        tail = '_'.join(n_1_gram[1:])
+        if len(in_memory_table) < max_cache_size or tail in in_memory_table:
+            in_memory_table[tail] += counts[key]
+        else:
+            if tail not in n_1_table:
+                n_1_table[tail] = np.zeros(num_classes, dtype=np.int32)
+            n_1_table[tail] += counts[key]
 
 
 def padded_ngram_tokens(fragments, n):
@@ -105,18 +116,30 @@ def padded_ngram_tokens(fragments, n):
 def build_counts_table(classes, num_classes, n, save_path):
     if n == 0:
         raise ValueError(f'Wrong ngram order: {n}')
-    #counts = Counter(ngrams(classes, n))
 
-    with shelve.open(save_path) as count_table:
-        for *n_1_gram, count_class in ngrams(classes, n):
-            key = '_'.join(map(str, n_1_gram))
+    max_cache_size = 1000
+
+    in_memory_table = defaultdict(lambda: np.zeros(num_classes, dtype=np.int32))
+
+    count_table = shelve.open(save_path)
+    for *n_1_gram, count_class in ngrams(classes, n):
+        key = '_'.join(map(str, n_1_gram))
+
+        if len(in_memory_table) < max_cache_size or key in in_memory_table:
+            counts_row = in_memory_table[key]
+            counts_row[count_class] += 1
+        else:
             if key not in count_table:
                 count_table[key] = np.zeros(num_classes, dtype=np.int32)
 
             counts_row = count_table[key]
             counts_row[count_class] += 1
             count_table[key] = counts_row
+
+    count_table.update(in_memory_table)
+
     print('Done', n)
+    return count_table
 
 
 class CountTableEnsemble:
@@ -128,11 +151,28 @@ class CountTableEnsemble:
             return encoded_classes(train_fragments, encoder, n)
 
         os.makedirs(save_dir, exist_ok=True)
+
         for i in range(n):
             file_name = f'table_{i + 1}'
             save_path = os.path.join(save_dir, file_name)
             build_counts_table(classes_gen(), num_classes,
                                n=i + 1, save_path=save_path)
+
+    def _experimental(self):
+        file_name = f'table_{n}'
+        save_path = os.path.join(save_dir, file_name)
+        counts_table = build_counts_table(classes_gen(), num_classes, n=n, save_path=save_path)
+
+        for i in range(n - 1, 0, -1):
+            file_name = f'table_{i}'
+            save_path = os.path.join(save_dir, file_name)
+            lower_order_table = shelve.open(save_path)
+            reduce_order(counts_table, lower_order_table)
+            counts_table.close()
+            counts_table = lower_order_table
+
+        counts_table.close()
+        return
 
     def __init__(self, dir_path):
         shelve_paths = [os.path.join(dir_path, f) for f in os.listdir(dir_path)]
@@ -167,18 +207,23 @@ def encoded_classes(fragments, encoder, n):
     return (encoder.encode(token) for token in padded_ngram_tokens(fragments, n))
 
 
-ds = NltkDataset('brown', categories=None)
+ds = NltkDataset('brown', categories='fiction')
 train_fragments = ds.get_training_fragments()
 val_fragments = ds.get_validation_fragments()
 test_fragments = ds.get_test_fragments()
 
 ngram_order = 4
 
-vocab = build_vocab(padded_ngram_tokens(train_fragments, ngram_order), max_size=10000)
+vocab = build_vocab(padded_ngram_tokens(train_fragments, ngram_order), max_size=5000)
 encoder = Encoder.build(vocab)
 print('vocab size', len(vocab))
 save_dir = 'counts_ensemble'
+
+import time
+t0 = time.time()
 CountTableEnsemble.build_counts(train_fragments, encoder, n=ngram_order, save_dir=save_dir)
+print('elapsed seconds: ', time.time() - t0)
+
 count_tables = CountTableEnsemble(save_dir)
 
 model = NGramModel(count_tables, smoothing=False)
