@@ -17,7 +17,7 @@ if __name__ == '__main__':
         tokens = sample(net, encoder, prompt, steps=100)
     elif args.ngram_path:
         model, encoder = NgramStorage.load(args.ngram_path)
-        tokens = ngrams.sample(model, encoder, prompt, 2)
+        tokens = ngrams.sample(model, encoder, prompt, model.n)
         model.close()
     else:
         raise Exception('Argument error: --lstm_path or --ngram_path argument has to be specified')

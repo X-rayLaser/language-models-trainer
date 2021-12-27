@@ -147,7 +147,7 @@ def padded_ngram_tokens(fragments, n):
         yield from remainder
 
 
-def build_counts_table3(classes, num_classes, n, save_path):
+def build_counts_table(classes, num_classes, n, save_path):
     max_cache_size = 1000000
 
     in_memory_table = defaultdict(lambda: SparseArray(num_classes))
@@ -164,10 +164,10 @@ def build_counts_table3(classes, num_classes, n, save_path):
             counts_row.increment_count(count_class)
         else:
             if key not in count_table:
-                count_table[key] = np.zeros(num_classes, dtype=np.int32)
+                count_table[key] = SparseArray(num_classes)
 
             counts_row = count_table[key]
-            counts_row[count_class] += 1
+            counts_row.increment_count(count_class)
             count_table[key] = counts_row
 
     count_table.update(in_memory_table)
@@ -242,7 +242,7 @@ class CountTableEnsemble:
         for i in range(n):
             file_name = f'table_{i + 1}'
             save_path = os.path.join(save_dir, file_name)
-            build_counts_table3(classes_gen(), num_classes,
+            build_counts_table(classes_gen(), num_classes,
                                n=i + 1, save_path=save_path)
 
     def _experimental(self):
@@ -266,7 +266,6 @@ class CountTableEnsemble:
 
         def get_file_name(path):
             _, file_name = os.path.split(path)
-            print(file_name)
             return file_name
 
         shelve_paths.sort(key=lambda path: int(get_file_name(path).split('_')[-1]))
@@ -318,4 +317,6 @@ def sample(model, encoder, prompt, ngram_order):
 
 
 # todo: having to manually call .close is error-prone
-# todo: one class for creating counts table, the other for reading it, tests
+# todo: add methods pmf() to SparseArray;
+# todo: SparsePMF class that can be used to get probability as well as sample from it
+# without the need to create a dense numpy array
