@@ -1,12 +1,11 @@
 import math
 import os
-from collections import defaultdict
+from collections import defaultdict, UserDict
 import shelve
 
 from nltk import ngrams
 import numpy as np
 
-from datasets import NltkDataset
 from preprocessing import Encoder, build_vocab, tokenize_prompt, Sentence
 
 
@@ -15,7 +14,7 @@ class SerializableModel:
         raise NotImplementedError
 
     @classmethod
-    def load_saved_model(cls, path):
+    def load_saved_model(cls, path, model_params):
         raise NotImplementedError
 
 
@@ -26,23 +25,21 @@ class NGramModel(SerializableModel):
     def build_model(cls, dataset, save_dir, ngram_order=4, max_size=5000):
         train_fragments = dataset.get_training_fragments()
 
-        vocab = build_vocab(padded_ngram_tokens(train_fragments, ngram_order), max_size=5000)
+        vocab = build_vocab(padded_ngram_tokens(train_fragments, ngram_order), max_size=max_size)
         encoder = Encoder.build(vocab)
         print('vocab size', len(vocab))
 
-        import time
-        t0 = time.time()
-
         counts_dir_path = os.path.join(save_dir, cls.counts_dir)
         CountTableEnsemble.build_counts(train_fragments, encoder, ngram_order, counts_dir_path)
-        return NGramModel(counts_dir_path, smoothing=False), encoder
+        return NGramModel(save_dir, smoothing=False), encoder
 
     @classmethod
-    def load_saved_model(cls, path, smoothing=True):
-        return cls(path, smoothing)
+    def load_saved_model(cls, path, model_params):
+        return cls(**model_params)
 
-    def __init__(self, counts_dir, smoothing=True):
-        self.counts_ensemble = CountTableEnsemble(counts_dir)
+    def __init__(self, save_dir, smoothing=True):
+        counts_dir_path = os.path.join(save_dir, self.counts_dir)
+        self.counts_ensemble = CountTableEnsemble(counts_dir_path)
         self.n = self.counts_ensemble.n
         self.smoothing = smoothing
 
@@ -50,6 +47,7 @@ class NGramModel(SerializableModel):
         self.counts_ensemble.close()
 
     def save_model(self, path):
+        # nothing to do because count tables were already created after building the model
         pass
 
     def probabilities(self, tokens):
@@ -149,21 +147,21 @@ def padded_ngram_tokens(fragments, n):
         yield from remainder
 
 
-def build_counts_table(classes, num_classes, n, save_path):
-    if n == 0:
-        raise ValueError(f'Wrong ngram order: {n}')
+def build_counts_table3(classes, num_classes, n, save_path):
+    max_cache_size = 1000000
 
-    max_cache_size = 1000
-
-    in_memory_table = defaultdict(lambda: np.zeros(num_classes, dtype=np.int32))
+    in_memory_table = defaultdict(lambda: SparseArray(num_classes))
 
     count_table = shelve.open(save_path)
-    for *n_1_gram, count_class in ngrams(classes, n):
+    for i, (*n_1_gram, count_class) in enumerate(ngrams(classes, n)):
         key = '_'.join(map(str, n_1_gram))
+
+        if i % 1000 == 0:
+            print(f'\rBuilding counts table, done {i} iterations', end='')
 
         if len(in_memory_table) < max_cache_size or key in in_memory_table:
             counts_row = in_memory_table[key]
-            counts_row[count_class] += 1
+            counts_row.increment_count(count_class)
         else:
             if key not in count_table:
                 count_table[key] = np.zeros(num_classes, dtype=np.int32)
@@ -173,9 +171,62 @@ def build_counts_table(classes, num_classes, n, save_path):
             count_table[key] = counts_row
 
     count_table.update(in_memory_table)
+
     count_table.close()
-    print('Done', n)
-    return count_table
+
+    print('\rDone')
+
+
+class SparseArray(UserDict):
+    def __init__(self, dense_size):
+        super().__init__()
+        self.indices = {}
+        self.counts = []
+        self.dense_size = dense_size
+
+    def __setitem__(self, key, value):
+        if key not in self.indices:
+            cur_size = len(self.indices)
+            self.indices[key] = cur_size
+            self.counts.append(0)
+        idx = self.indices[key]
+        self.counts[idx] = value
+
+    def __getitem__(self, key):
+        idx = self.indices[key]
+        return self.counts[idx]
+
+    def increment_count(self, token):
+        self[token] = self.get(token, 0) + 1
+
+    def to_numpy(self):
+        dense = np.zeros(self.dense_size, dtype=np.int32)
+        for token, idx in self.indices.items():
+            dense[token] = self.counts[idx]
+
+        return dense
+
+    def tolist(self):
+        return self.to_numpy().tolist()
+
+
+class CountTable(UserDict):
+    def __init__(self, save_path):
+        super().__init__()
+        self.d = shelve.open(save_path)
+
+    def __getitem__(self, item):
+        key = '_'.join(map(str, item))
+        return self.d[key]
+
+    def __len__(self):
+        return len(self.d)
+
+    def close(self):
+        self.d.close()
+
+    def any_value(self):
+        return next(iter(self.d.values()))
 
 
 class CountTableEnsemble:
@@ -191,7 +242,7 @@ class CountTableEnsemble:
         for i in range(n):
             file_name = f'table_{i + 1}'
             save_path = os.path.join(save_dir, file_name)
-            build_counts_table(classes_gen(), num_classes,
+            build_counts_table3(classes_gen(), num_classes,
                                n=i + 1, save_path=save_path)
 
     def _experimental(self):
@@ -212,7 +263,6 @@ class CountTableEnsemble:
 
     def __init__(self, dir_path):
         shelve_paths = [os.path.join(dir_path, f) for f in os.listdir(dir_path)]
-        print(shelve_paths)
 
         def get_file_name(path):
             _, file_name = os.path.split(path)
@@ -220,7 +270,7 @@ class CountTableEnsemble:
             return file_name
 
         shelve_paths.sort(key=lambda path: int(get_file_name(path).split('_')[-1]))
-        self.count_tables = [shelve.open(f) for f in shelve_paths if os.path.isfile(f)]
+        self.count_tables = [CountTable(f) for f in shelve_paths if os.path.isfile(f)]
         self.n = len(self.count_tables)
 
     def get_counts_row(self, prev_tokens):
@@ -228,10 +278,10 @@ class CountTableEnsemble:
 
         while n > 0:
             count_table = self.count_tables[n - 1]
-            prefix = '_'.join(map(str, prev_tokens[-n:]))
+            prefix = prev_tokens[-n:]
 
             try:
-                return count_table[prefix]
+                return count_table[prefix].to_numpy()
             except KeyError:
                 n -= 1
 
@@ -239,7 +289,7 @@ class CountTableEnsemble:
 
         assert len(unigram_table) == 1
 
-        return next(iter(unigram_table.values()))
+        return unigram_table.any_value().to_numpy()
 
     def close(self):
         for t in self.count_tables:
@@ -265,3 +315,7 @@ def sample(model, encoder, prompt, ngram_order):
     clean_tokens = encoder.encode_many(clean_tokens)
     outputs, _ = model.generate(clean_tokens, size=50)
     return encoder.decode_many(outputs)
+
+
+# todo: having to manually call .close is error-prone
+# todo: one class for creating counts table, the other for reading it, tests

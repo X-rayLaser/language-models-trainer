@@ -13,7 +13,7 @@ if __name__ == '__main__':
 
     model, encoder = NgramStorage.load(args.ngram_path)
 
-    ds = NltkDataset('brown', categories='fiction')
+    ds = NltkDataset('brown', categories=None)
     train_fragments = ds.get_training_fragments()
     val_fragments = ds.get_validation_fragments()
     test_fragments = ds.get_test_fragments()
@@ -27,3 +27,4 @@ if __name__ == '__main__':
     val_pp = calculate_perplexity(model, list(validation)[:1000], ngram_order)
     print('Training data perplexity', train_pp)
     print('Validation data perplexity', val_pp)
+    model.close()
