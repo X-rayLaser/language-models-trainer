@@ -100,7 +100,7 @@ if __name__ == '__main__':
 
     genre = args.genre or None
     if genre == 'wiki2':
-        ds = Wiki2('datasets/wikitext-2', size=args.size, as_paragraphs=args.paras)
+        ds = Wiki2('corpora/wikitext-2', size=args.size, as_paragraphs=args.paras)
     else:
         ds = NltkDataset(corpus_name='brown', size=args.size,
                          categories=genre, as_paragraphs=args.paras)

@@ -9,6 +9,7 @@ from torch.nn import functional as F
 from metrics import batch_perplexity
 from preprocessing import tokenize_prompt, wrapped_tokens, one_hot_tensor, Encoder
 from model import Net
+from ngrams import NGramModel
 
 
 class MovingAverage:
@@ -153,6 +154,8 @@ class ModelStorage:
     encoding_table_name = 'encoding_table'
     model_params_name = 'model_params'
 
+    model_class = Net
+
     @classmethod
     def save(cls, model, model_params, encoder, dir_path):
         os.makedirs(dir_path, exist_ok=True)
@@ -161,7 +164,7 @@ class ModelStorage:
         with open(cls.model_params_path(dir_path), 'w', encoding='utf-8') as f:
             f.write(params_json)
 
-        torch.save(model.state_dict(), cls.model_path(dir_path))
+        model.save_model(cls.model_path(dir_path))
         encoding_table = encoder.serialize()
 
         with open(cls.encoding_table_path(dir_path), 'w', encoding='utf-8') as f:
@@ -196,9 +199,8 @@ class ModelStorage:
             params_json = f.read()
 
         model_params = json.loads(params_json)
-        model = Net(**model_params)
-        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
-        model.eval()
+
+        model = cls.model_class.load_saved_model(model_path, model_params)
 
         with open(encoding_table_path, 'r', encoding='utf-8') as f:
             encoding_table = f.read()
@@ -208,5 +210,10 @@ class ModelStorage:
 
     @classmethod
     def _validate_file(cls, path):
-        if not os.path.isfile(path):
+        if not os.path.exists(path):
             raise Exception(f'File "{path}" does not exist')
+
+
+class NgramStorage(ModelStorage):
+    model_class = NGramModel
+    model_name = 'counts_ensemble'
