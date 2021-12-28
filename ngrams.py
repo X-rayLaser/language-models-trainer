@@ -117,27 +117,6 @@ class NGramModel(SerializableModel):
         return np.random.choice(num_classes, p=pmf)
 
 
-def reduce_order(counts, output_table):
-    # todo: fix this and use this as a main routine to compute n-1 grams to speed up build_ensemble_counts function
-    n_1_table = output_table
-    counts_row = next(iter(counts.values()))
-    num_classes = counts_row.shape[0]
-
-    max_cache_size = 1000
-    in_memory_table = defaultdict(lambda: np.zeros(num_classes, dtype=np.int32))
-
-    for key in counts:
-        n_1_gram = key.split('_')
-
-        tail = '_'.join(n_1_gram[1:])
-        if len(in_memory_table) < max_cache_size or tail in in_memory_table:
-            in_memory_table[tail] += counts[key]
-        else:
-            if tail not in n_1_table:
-                n_1_table[tail] = np.zeros(num_classes, dtype=np.int32)
-            n_1_table[tail] += counts[key]
-
-
 def padded_ngram_tokens(fragments, n):
     padding_size = n - 1
     for fragment in fragments:
@@ -173,8 +152,7 @@ def build_counts_table(classes, num_classes, n, save_path):
     count_table.update(in_memory_table)
 
     count_table.close()
-
-    print('\rDone')
+    print(f'\x1b[1K\r{n}-gram count table is complete')
 
 
 class SparseArray(UserDict):
@@ -244,22 +222,6 @@ class CountTableEnsemble:
             save_path = os.path.join(save_dir, file_name)
             build_counts_table(classes_gen(), num_classes,
                                n=i + 1, save_path=save_path)
-
-    def _experimental(self):
-        file_name = f'table_{n}'
-        save_path = os.path.join(save_dir, file_name)
-        counts_table = build_counts_table(classes_gen(), num_classes, n=n, save_path=save_path)
-
-        for i in range(n - 1, 0, -1):
-            file_name = f'table_{i}'
-            save_path = os.path.join(save_dir, file_name)
-            lower_order_table = shelve.open(save_path)
-            reduce_order(counts_table, lower_order_table)
-            counts_table.close()
-            counts_table = lower_order_table
-
-        counts_table.close()
-        return
 
     def __init__(self, dir_path):
         shelve_paths = [os.path.join(dir_path, f) for f in os.listdir(dir_path)]
